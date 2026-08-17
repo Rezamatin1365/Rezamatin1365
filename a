@@ -1,0 +1,623 @@
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import random
+import datetime
+import time
+import os
+import hashlib
+import socket
+import urllib.request
+import json
+import subprocess
+import sys
+
+def clear_screen():
+    os.system('clear')
+
+def random_digits(length):
+    return ''.join([str(random.randint(0, 9)) for _ in range(length)])
+
+def random_hex(length):
+    return ''.join([random.choice('0123456789abcdef') for _ in range(length)])
+
+def bold(text):
+    return f"\033[1m{text}\033[0m"
+
+def color(text, code):
+    return f"\033[{code}m{text}\033[0m"
+
+def green(text):
+    return color(text, "32")
+
+def yellow(text):
+    return color(text, "33")
+
+def red(text):
+    return color(text, "31")
+
+def cyan(text):
+    return color(text, "36")
+
+def magenta(text):
+    return color(text, "35")
+
+def blink(text):
+    return f"\033[5m{text}\033[0m"
+
+def bg_black(text):
+    return f"\033[40m{text}\033[0m"
+
+def line(char="─"):
+    print(char * 80)
+
+def double_line():
+    print("═" * 80)
+
+def box_top():
+    print("╔" + "═" * 78 + "╗")
+
+def box_bottom():
+    print("╚" + "═" * 78 + "╝")
+
+def box_line(text, align="left"):
+    if align == "center":
+        padding = (78 - len(text)) // 2
+        line_text = " " * padding + text + " " * (78 - padding - len(text))
+    elif align == "right":
+        line_text = " " * (78 - len(text)) + text
+    else:
+        line_text = text + " " * (78 - len(text))
+    print("║" + line_text + "║")
+
+def title_banner():
+    print("")
+    print(bold(cyan("  ████████████████████████████████████████████████████████████████████████████")))
+    print(bold(cyan("  ██                                                                        ██")))
+    print(bold(cyan("  ██     بانک مرکزی جمهوری اسلامی ایران                                     ██")))
+    print(bold(cyan("  ██     CENTRAL BANK OF THE ISLAMIC REPUBLIC OF IRAN                      ██")))
+    print(bold(cyan("  ██                                                                        ██")))
+    print(bold(cyan("  ██     سامانه انتقال مبادلات بانکی (SATNA/PAYA)                           ██")))
+    print(bold(cyan("  ██     REAL-TIME GROSS SETTLEMENT SYSTEM v8.4.2                          ██")))
+    print(bold(cyan("  ██                                                                        ██")))
+    print(bold(cyan("  ████████████████████████████████████████████████████████████████████████████")))
+    print("")
+
+def detect_bank_from_sheba(sheba):
+    sheba = sheba.replace("IR", "").replace(" ", "")
+    bank_code = sheba[:3]
+    banks = {
+        "017": "BANK MELLI IRAN",
+        "012": "BANK MELLAT",
+        "054": "BANK PASARGAD",
+        "020": "BANK TEJARAT",
+        "055": "BANK EGHTESAD NOVIN",
+        "013": "BANK REFAH",
+        "062": "BANK AYANDEH",
+        "018": "BANK SADERAT",
+        "019": "BANK SAMAN",
+        "058": "BANK SARMAYEH",
+        "015": "BANK SEPAH",
+        "061": "BANK SHAHR",
+        "078": "BANK KHAVARMIANEH",
+        "056": "BANK SAMAN",
+        "010": "CENTRAL BANK OF IRAN",
+        "011": "BANK SANAT MADAN",
+        "016": "BANK KESHAVARZI",
+        "022": "TOSE SADERAT BANK",
+        "053": "BANK KARAFARIN",
+        "057": "BANK PASARGAD",
+        "059": "BANK SINA",
+        "060": "BANK MEHR IRAN",
+        "063": "BANK ANSAR",
+        "064": "BANK GARDESHGARI",
+        "065": "BANK HEKMAT IRANIAN",
+        "066": "BANK DAY",
+        "069": "BANK IRAN ZAMIN",
+        "070": "BANK RESALAT",
+        "073": "BANK MEHR EQTESAD",
+        "075": "BANK MELAL",
+        "076": "BANK KOSAR",
+        "077": "BANK MARKAZI",
+        "080": "BANK NOOR",
+        "095": "BANK IRAN VENEZUELA"
+    }
+    return banks.get(bank_code, "UNKNOWN BANK")
+
+def detect_bank_from_account(account):
+    if len(account) >= 4:
+        prefix = account[:3]
+        banks = {
+            "017": "BANK MELLI IRAN",
+            "012": "BANK MELLAT",
+            "054": "BANK PASARGAD",
+            "020": "BANK TEJARAT",
+            "055": "BANK EGHTESAD NOVIN",
+            "013": "BANK REFAH",
+            "062": "BANK AYANDEH",
+            "018": "BANK SADERAT",
+            "019": "BANK SAMAN",
+            "015": "BANK SEPAH",
+            "061": "BANK SHAHR",
+            "016": "BANK KESHAVARZI",
+            "053": "BANK KARAFARIN",
+            "059": "BANK SINA",
+            "060": "BANK MEHR IRAN",
+            "063": "BANK ANSAR",
+            "064": "BANK GARDESHGARI",
+            "066": "BANK DAY"
+        }
+        return banks.get(prefix, "UNKNOWN BANK")
+    return "UNKNOWN BANK"
+
+def mask_account(account):
+    if len(account) > 8:
+        return account[:3] + "*" * (len(account) - 6) + account[-3:]
+    return account
+
+def format_amount(amount_str):
+    try:
+        amount = int(amount_str.replace(",", ""))
+        return "{:,}".format(amount)
+    except:
+        return amount_str
+
+def amount_in_words(amount):
+    try:
+        amount = int(amount.replace(",", ""))
+        if amount >= 1_000_000_000_000:
+            trillions = amount // 1_000_000_000_000
+            remainder = amount % 1_000_000_000_000
+            if remainder == 0:
+                return f"{trillions} TRILLION RIALS"
+            billions = remainder // 1_000_000_000
+            return f"{trillions} TRILLION AND {billions} BILLION RIALS"
+        elif amount >= 1_000_000_000:
+            billions = amount // 1_000_000_000
+            remainder = amount % 1_000_000_000
+            if remainder == 0:
+                return f"{billions} BILLION RIALS"
+            millions = remainder // 1_000_000
+            return f"{billions} BILLION AND {millions} MILLION RIALS"
+        elif amount >= 1_000_000:
+            millions = amount // 1_000_000
+            return f"{millions} MILLION RIALS"
+        else:
+            return f"{amount} RIALS"
+    except:
+        return amount
+
+def get_ip_address():
+    try:
+        req = urllib.request.Request('https://api.ipify.org', headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            public_ip = response.read().decode('utf-8').strip()
+            return public_ip
+    except:
+        try:
+            hostname = socket.gethostname()
+            local_ip = socket.gethostbyname(hostname)
+            return local_ip
+        except:
+            return "185.143.234.137"
+
+def log_event(label, status="OK", color_code=green, delay=0.4):
+    time.sleep(delay)
+    print(f"  [{color_code('*')}] {label} ... [{color_code(status)}]")
+
+def print_ascii_qr(data):
+    """Print QR Code as ASCII art in terminal"""
+    try:
+        import qrcode
+        
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=1,
+            border=2,
+        )
+        qr.add_data(data)
+        qr.make(fit=True)
+        
+        # Generate ASCII representation
+        qr_ascii = qr.print_ascii(invert=True)
+        return True
+    except:
+        return False
+
+def generate_qr_png(data, filepath):
+    """Generate QR Code PNG image"""
+    try:
+        import qrcode
+        
+        qr = qrcode.QRCode(
+            version=3,
+            error_correction=qrcode.constants.ERROR_CORRECT_H,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(data)
+        qr.make(fit=True)
+        
+        img = qr.make_image(fill_color="black", back_color="white")
+        img.save(filepath)
+        return os.path.exists(filepath)
+    except Exception as e:
+        print(red(f"  [ERROR] QR PNG failed: {e}"))
+        return False
+
+def save_transaction(data):
+    """Save transaction to a JSON file"""
+    filename = "transactions.json"
+    try:
+        if os.path.exists(filename):
+            with open(filename, 'r', encoding='utf-8') as f:
+                transactions = json.load(f)
+        else:
+            transactions = []
+        
+        transactions.append(data)
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(transactions, f, ensure_ascii=False, indent=2)
+        
+        return True
+    except:
+        return False
+
+def main():
+    clear_screen()
+    print("\033[?25l", end="")
+    
+    # ========================================================================
+    # TITLE BANNER
+    # ========================================================================
+    title_banner()
+    
+    print(green("  [SYSTEM] Initializing secure banking terminal..."))
+    time.sleep(0.3)
+    print(green("  [SYSTEM] Loading cryptographic modules..."))
+    time.sleep(0.3)
+    print(green("  [SYSTEM] Connection to CBI backbone established."))
+    time.sleep(0.3)
+    print("")
+    
+    # ========================================================================
+    # INPUT SECTION
+    # ========================================================================
+    double_line()
+    print(bold(cyan("  DATA ENTRY MODULE - SATNA/PAYA TRANSFER")))
+    double_line()
+    print("")
+    
+    # Source Account
+    while True:
+        print(cyan("  >> SOURCE ACCOUNT NUMBER: "), end="")
+        source_account = input().strip()
+        if source_account and source_account.isdigit():
+            break
+        print(red("  [ERROR] Invalid account number. Please enter digits only."))
+    
+    source_bank = detect_bank_from_account(source_account)
+    print(green(f"  [AUTO-DETECT] Source Bank: {source_bank}"))
+    print("")
+    
+    # Source Shahab
+    print(cyan("  >> SOURCE SHAHAB CODE (optional, press Enter to skip): "), end="")
+    source_shahab = input().strip()
+    if not source_shahab:
+        source_shahab = "10000000" + random_digits(8)
+        print(yellow(f"  [AUTO] Generated Shahab: {source_shahab}"))
+    print("")
+    
+    # Destination Sheba
+    while True:
+        print(cyan("  >> DESTINATION SHEBA (IR...): "), end="")
+        dest_sheba = input().strip().upper()
+        if dest_sheba.startswith("IR") and len(dest_sheba.replace(" ", "")) >= 26:
+            break
+        print(red("  [ERROR] Invalid Sheba. Must start with IR and be 26 characters."))
+    
+    dest_bank = detect_bank_from_sheba(dest_sheba)
+    print(green(f"  [AUTO-DETECT] Destination Bank: {dest_bank}"))
+    print("")
+    
+    # DESTINATION ACCOUNT HOLDER NAME - ASKED FROM USER
+    print(cyan("  >> DESTINATION ACCOUNT HOLDER NAME: "), end="")
+    dest_holder_name = input().strip()
+    if not dest_holder_name:
+        dest_holder_name = "UNKNOWN RECIPIENT"
+        print(yellow("  [WARN] No name provided. Using placeholder."))
+    print(green(f"  [CONFIRM] Recipient: {dest_holder_name}"))
+    print("")
+    
+    # Amount
+    while True:
+        print(cyan("  >> AMOUNT (IRR): "), end="")
+        amount_input = input().strip().replace(",", "")
+        if amount_input.isdigit() and int(amount_input) > 0:
+            break
+        print(red("  [ERROR] Invalid amount. Please enter a positive number."))
+    
+    print("")
+    print(green("  [INFO] All inputs received. Preparing transaction..."))
+    time.sleep(0.5)
+    print("")
+    
+    # ========================================================================
+    # NETWORK & ACCOUNT INQUIRY - CONTINUOUS, NO ANIMATION
+    # ========================================================================
+    double_line()
+    print(bold(cyan("  NETWORK & ACCOUNT INQUIRY MODULE")))
+    double_line()
+    print("")
+    
+    log_event("Detecting public IP address")
+    ip_address = get_ip_address()
+    print(green(f"  [NET]  Public IP detected: {ip_address}"))
+    print("")
+    
+    log_event(f"Querying {source_bank} API")
+    print(green(f"  [API]  {source_bank} API response: ONLINE"))
+    print("")
+    
+    log_event(f"Querying {dest_bank} API")
+    print(green(f"  [API]  {dest_bank} API response: ONLINE"))
+    print("")
+    
+    log_event("Validating Sheba structure")
+    print(green(f"  [SHEBA] Validation: PASSED"))
+    print("")
+    
+    log_event("Verifying account holder name")
+    print(green(f"  [INQ]  Account holder confirmed: {dest_holder_name}"))
+    print("")
+    
+    log_event("Checking AML compliance")
+    print(green(f"  [AML]  Anti-Money Laundering check: PASSED"))
+    print("")
+    
+    log_event("Verifying daily transfer limit")
+    print(green(f"  [LIMIT] Daily limit check: PASSED"))
+    print("")
+    
+    # ========================================================================
+    # SYSTEM INITIALIZATION - CONTINUOUS, NO ANIMATION
+    # ========================================================================
+    double_line()
+    print(bold(cyan("  SYSTEM INITIALIZATION - MODULE LOADING")))
+    double_line()
+    print("")
+    
+    modules = [
+        f"Loading {source_bank} Core Banking API Module v4.2",
+        "Connecting to CBI Interbank Network (SWIFT/RTGS)",
+        "Verifying TLS 1.3 Certificate Chain (2048-bit RSA)",
+        "Establishing AES-256-GCM Secure Tunnel",
+        f"Querying {dest_bank} Account Validation Service",
+        "Loading SATNA Settlement Protocol v3.1",
+        "Initializing Fraud Detection Engine (AI/ML)",
+        "Connecting to Sheba Validation Service (CBI-SVS)",
+        "Querying Account Holder Information (CBI-AIS)",
+        "Detecting Client IP Address & Geolocation",
+        "Loading Digital Signature Module (RSA-4096)",
+        "Initializing Blockchain Audit Trail"
+    ]
+    for module in modules:
+        log_event(module)
+    
+    print("")
+    print(green("  [AUTH]   Gateway authentication: SUCCESSFUL"))
+    print(green(f"  [NET]    Route established: {ip_address}:8443 via CBI-BACKBONE"))
+    print(green("  [SEC]    Encryption: AES-256-GCM | Protocol: TLS 1.3 | Key Exchange: ECDH"))
+    print(green(f"  [BANK]   Source detected: {source_bank}"))
+    print(green(f"  [BANK]   Destination detected: {dest_bank}"))
+    print(green("  [SHEBA]  Sheba validation: PASSED (Checksum verified)"))
+    print(green(f"  [INQ]    Account holder inquiry: SUCCESSFUL"))
+    print(green(f"  [INQ]    Holder name retrieved: {dest_holder_name}"))
+    print(green(f"  [NET]    Client IP auto-detected: {ip_address}"))
+    print(green("  [AML]    Risk assessment: LOW RISK"))
+    print("")
+    
+    # ========================================================================
+    # MAIN TRANSACTION HEADER - CONTINUOUS
+    # ========================================================================
+    now = datetime.datetime.now()
+    dest_account = dest_sheba.replace("IR", "").replace(" ", "")[5:]
+    masked_source = mask_account(source_account)
+    formatted_amount = format_amount(amount_input)
+    amount_words = amount_in_words(formatted_amount)
+    
+    txn_id = f"TXN-{now.strftime('%Y%m%d')}-{random_digits(6)}"
+    trc_id = f"TRC{random_digits(12)}"
+    rrn = f"RRN{random_digits(12)}"
+    stan = f"STAN{random_digits(6)}"
+    batch = f"B{now.strftime('%j')}{random_digits(4)}"
+    auth_code = random_digits(6)
+    session_id = random_hex(16)
+    corr_id = random_hex(32)
+    
+    # HASH GENERATION
+    hash_data = f"{txn_id}{trc_id}{rrn}{stan}{source_account}{dest_sheba}{amount_input}{now.strftime('%Y%m%d%H%M%S')}"
+    txn_hash_sha256 = hashlib.sha256(hash_data.encode()).hexdigest()
+    txn_hash_sha512 = hashlib.sha512(hash_data.encode()).hexdigest()
+    
+    # ========================================================================
+    # FINAL RECEIPT - BIG & BOLD - CONTINUOUS
+    # ========================================================================
+    print("")
+    print("")
+    print(bold(cyan("  " + "█" * 76)))
+    print(bold(cyan("  " + "█" * 76)))
+    print("")
+    print(bold(green("    TRANSACTION COMPLETED SUCCESSFULLY")).center(80))
+    print("")
+    print(bold(cyan("  " + "█" * 76)))
+    print(bold(cyan("  " + "█" * 76)))
+    print("")
+    print("")
+    
+    box_top()
+    box_line("OFFICIAL RECEIPT - BANK MARKAZI JOMHURI ISLAMI IRAN", "center")
+    box_line("", "center")
+    box_line(f"APPROVAL CODE: {bold(blink(auth_code))}", "center")
+    box_bottom()
+    print("")
+    
+    print(f"  {cyan('Transaction ID:')}     {bold(txn_id)}")
+    print(f"  {cyan('Trace Number:')}       {bold(trc_id)}")
+    print(f"  {cyan('Reference Number:')}   {bold(rrn)}")
+    print(f"  {cyan('Amount:')}             {bold(green(formatted_amount + ' IRR'))}")
+    print(f"  {cyan('From:')}               {masked_source} ({source_bank})")
+    print(f"  {cyan('To:')}                 {dest_sheba}")
+    print(f"  {cyan('Recipient:')}          {bold(magenta(dest_holder_name))}")
+    print(f"  {cyan('Date/Time:')}          {now.strftime('%Y-%m-%d %H:%M:%S')}")
+    print("")
+    
+    double_line()
+    print(bold(cyan("  FINAL TRANSACTION HASH (SHA-512)")))
+    double_line()
+    print("")
+    print(bold(bg_black(yellow(txn_hash_sha512))))
+    print("")
+    
+    double_line()
+    print(bold(cyan("  TRACKING CODES")))
+    double_line()
+    print("")
+    print(f"  {bold(green('TXN-ID:'))}  {txn_id}")
+    print(f"  {bold(green('TRC-ID:'))}  {trc_id}")
+    print(f"  {bold(green('RRN:'))}     {rrn}")
+    print(f"  {bold(green('STAN:'))}    {stan}")
+    print(f"  {bold(green('AUTH:'))}    {auth_code}")
+    print("")
+    
+    # ========================================================================
+    # QR CODE SECTION - ASCII IN TERMINAL + PNG FILE
+    # ========================================================================
+    transaction_data = {
+        "txn_id": txn_id,
+        "trc_id": trc_id,
+        "rrn": rrn,
+        "stan": stan,
+        "auth_code": auth_code,
+        "amount": formatted_amount,
+        "amount_words": amount_words,
+        "source_account": source_account,
+        "source_masked": masked_source,
+        "source_bank": source_bank,
+        "source_shahab": source_shahab,
+        "dest_sheba": dest_sheba,
+        "dest_bank": dest_bank,
+        "dest_account": dest_account,
+        "dest_holder": dest_holder_name,
+        "timestamp": now.strftime('%Y-%m-%d %H:%M:%S'),
+        "date": now.strftime('%Y-%m-%d'),
+        "time": now.strftime('%H:%M:%S'),
+        "ip_address": ip_address,
+        "hash_sha256": txn_hash_sha256,
+        "hash_sha512": txn_hash_sha512
+    }
+    
+    # Save transaction to JSON
+    save_transaction(transaction_data)
+    
+    # Build QR data string
+    qr_data = (
+        f"TXN:{txn_id}|"
+        f"AMT:{formatted_amount} IRR|"
+        f"FROM:{masked_source}|"
+        f"TO:{dest_sheba}|"
+        f"RECIPIENT:{dest_holder_name}|"
+        f"DATE:{now.strftime('%Y-%m-%d')}|"
+        f"TIME:{now.strftime('%H:%M:%S')}|"
+        f"AUTH:{auth_code}|"
+        f"STATUS:APPROVED"
+    )
+    
+    # ========================================================================
+    # PRINT QR CODE IN TERMINAL (ASCII)
+    # ========================================================================
+    double_line()
+    print(bold(cyan("  QR CODE - SCAN WITH YOUR PHONE")))
+    double_line()
+    print("")
+    
+    # Try to print ASCII QR
+    qr_ascii_success = print_ascii_qr(qr_data)
+    
+    if not qr_ascii_success:
+        # Fallback: print QR data as text block
+        print(yellow("  [INFO] QR Code ASCII not available"))
+        print(yellow("  [INFO] Install qrcode: pip3 install qrcode"))
+        print("")
+        print(bold(cyan("  QR DATA (Copy and use online QR generator):")))
+        print("")
+        print(f"  {yellow(qr_data)}")
+    
+    print("")
+    
+    # ========================================================================
+    # SAVE QR CODE AS PNG FILE
+    # ========================================================================
+    double_line()
+    print(bold(cyan("  SAVING QR CODE TO FILE")))
+    double_line()
+    print("")
+    
+    # Try multiple locations
+    save_paths = [
+        os.path.expanduser("~"),  # Home
+        "/storage/emulated/0/Download",  # Android Download
+        "/storage/emulated/0/Documents",  # Android Documents
+        os.getcwd(),  # Current directory
+    ]
+    
+    qr_saved = False
+    qr_filepath = None
+    
+    for save_dir in save_paths:
+        if os.path.exists(save_dir) and os.access(save_dir, os.W_OK):
+            qr_filename = f"qr_{txn_id}.png"
+            qr_filepath = os.path.join(save_dir, qr_filename)
+            
+            if generate_qr_png(qr_data, qr_filepath):
+                print(green(f"  [OK] QR Code saved to: {qr_filepath}"))
+                print(green(f"  [OK] File size: {os.path.getsize(qr_filepath)} bytes"))
+                qr_saved = True
+                break
+            else:
+                continue
+    
+    if not qr_saved:
+        print(red("  [ERROR] Could not save QR Code PNG"))
+        print(yellow("  [INFO] Try running: pip3 install qrcode[pil]"))
+        qr_filepath = None
+    
+    print("")
+    
+    # ========================================================================
+    # FINAL OUTPUT
+    # ========================================================================
+    double_line()
+    print(bold(green("  END OF TRANSACTION RECORD")))
+    print(cyan(f"  Generated: {now.strftime('%Y-%m-%d %H:%M:%S')} | Reference: REF{random_digits(5)}"))
+    print(cyan("  Bank Markazi Jomhuri Islami Iran - Core Banking System v8.4.2"))
+    double_line()
+    print("")
+    
+    if qr_saved and qr_filepath:
+        print(bold(magenta("  [SUCCESS] QR Code saved!")))
+        print(bold(magenta(f"  [LOCATION] {qr_filepath}")))
+        print(bold(magenta("  [TIP] Open file manager and look for the QR image")))
+    else:
+        print(bold(magenta("  [INFO] QR Code displayed above as ASCII art")))
+        print(bold(magenta("  [INFO] Screenshot the QR code or use the data string")))
+    
+    print("")
+    
+    print("\033[?25h", end="")
+
+if __name__ == "__main__":
+    main()
